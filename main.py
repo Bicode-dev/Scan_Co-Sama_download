@@ -6,27 +6,6 @@ import re
 import sys
 import platform
 import shutil
-import logging
-import traceback
-from datetime import datetime
-
-# ── Logging ───────────────────────────────────────────────────────────────────
-LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cosama_debug.log")
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-    ]
-)
-logger = logging.getLogger("cosama")
-
-def log(msg, level="info"):
-    """Raccourci pour écrire dans le fichier de log."""
-    getattr(logger, level)(msg)
-
 # ── Classe UI ─────────────────────────────────────────────────────────────────
 class UI:
     @staticmethod
@@ -191,32 +170,27 @@ def download_image(url, filepath):
 def find_working_server(manga_name, manga_url, domain, max_servers=10):
     """Trouve le serveur fonctionnel"""
     domain = domain.rstrip("/")
-    print(f"🔍 Recherche du serveur fonctionnel...\n")
+    print(f"🔍 Recherche du serveur fonctionnel...", end=" ", flush=True)
     
     found_versions = []  # Liste des versions trouvées
+    tested = []          # Pour afficher les échecs seulement si tout échoue
     
     # Liste des variantes à tester
     variants = [
-        ("normal", manga_name, manga_url),  # Version originale
-        ("normal", manga_name.title(), quote(manga_name.title())),  # Avec majuscules (Title Case)
+        ("normal", manga_name, manga_url),
+        ("normal", manga_name.title(), quote(manga_name.title())),
     ]
     
     for version_type, variant_name, variant_url in variants:
-        if variant_url != manga_url:
-            print(f"🔄 Tentative avec '{variant_name}'...\n")
-        
         for server_num in range(1, max_servers + 1):
             server = f"s{server_num}"
             test_url = f"{domain}/{server}/scans/{variant_url}/1/1.jpg"
-            
-            print(f"⏳ Test du serveur {server}...", end=" ")
+            tested.append((server, test_url))
             
             if check_image_exists(test_url):
-                print("✅ FONCTIONNEL!")
+                print("✅")
                 found_versions.append(("Normal", server, variant_url))
                 break
-            else:
-                print("❌")
             
             time.sleep(0.5)
         
@@ -243,8 +217,12 @@ def find_working_server(manga_name, manga_url, domain, max_servers=10):
         if len(found_versions) > 1:
             break
     
-    # Si aucune version trouvée
+    # Si aucune version trouvée : afficher tous les échecs
     if not found_versions:
+        print("❌")
+        print("\n⚠️  Détail des serveurs testés :")
+        for srv, url in tested:
+            print(f"   ❌ {srv} → {url}")
         print("\n❌ Aucun serveur fonctionnel trouvé!")
         return None, None
     
@@ -316,7 +294,6 @@ def download_manga(manga_name, start_chapter=None):
     # Récupérer le domaine actif scrappé
     active_catalogue = get_active_domain()
     domain = active_catalogue.replace("/catalogue/", "").replace("/catalogue", "")
-    log(f"Domaine actif utilisé : {domain}")
 
     # Encoder le nom pour l'URL
     manga_url = quote(manga_name)
@@ -421,50 +398,29 @@ def download_manga(manga_name, start_chapter=None):
 
 # Co-sama - Téléchargeur de manga
 if __name__ == "__main__":
-    log(f"{'='*50}")
-    log(f"Démarrage de Co-Sama — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    log(f"Système : {platform.system()} | Python {sys.version.split()[0]}")
-    log(f"{'='*50}")
+    s = platform.system()
+    is_android = s == "Linux" and "ANDROID_STORAGE" in os.environ
+
+    if s == "Windows":
+        os.system(f'title Co-Sama')
+    elif s == "Linux" and not is_android:
+        sys.stdout.write(f"\033]0;Co-Sama\007")
+        sys.stdout.flush()
+
+    print("="*60)
+    print("🌙 CO-SAMA - Téléchargeur de Manga 🌙")
+    print("="*60)
+    print()
 
     try:
-        s = platform.system()
-        is_android = s == "Linux" and "ANDROID_STORAGE" in os.environ
-
-        if s == "Windows":
-            os.system(f'title Co-Sama')
-        elif s == "Linux" and not is_android:
-            sys.stdout.write(f"\033]0;Co-Sama\007")
-            sys.stdout.flush()
-
-        print("="*60)
-        print("🌙 CO-SAMA - Téléchargeur de Manga 🌙")
-        print("="*60)
-        print()
-
         manga_name = input("📚 Entrez le nom du manga: ").strip()
-        log(f"Manga demandé : '{manga_name}'")
 
         if not manga_name:
             print("❌ Nom de manga invalide!")
-            log("Nom de manga vide, arrêt.", level="warning")
         else:
             manga_name = manga_name.title()
             print()
-            log(f"Lancement du téléchargement : '{manga_name}'")
             download_manga(manga_name)
-            log(f"Téléchargement terminé : '{manga_name}'")
 
     except KeyboardInterrupt:
-        log("Interruption clavier (Ctrl+C) — arrêt propre.", level="warning")
         print("\n\n⚠️  Arrêté par l'utilisateur.")
-
-    except Exception as e:
-        tb = traceback.format_exc()
-        log(f"CRASH NON GÉRÉ : {e}", level="error")
-        log(f"Traceback complet :\n{tb}", level="error")
-        print(f"\n❌ Erreur inattendue : {e}")
-        print(f"📄 Détails enregistrés dans : {LOG_FILE}")
-
-    finally:
-        log("Fin du programme.")
-        log(f"{'='*50}\n")
