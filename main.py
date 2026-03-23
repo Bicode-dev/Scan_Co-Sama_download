@@ -170,7 +170,7 @@ def download_image(url, filepath):
 def find_working_server(manga_name, manga_url, domain, max_servers=10):
     """Trouve le serveur fonctionnel"""
     domain = domain.rstrip("/")
-    print(f"🔍 Recherche du serveur fonctionnel...", end=" ", flush=True)
+    print(f"🔍 Recherche du serveur fonctionnel...")
     
     found_versions = []  # Liste des versions trouvées
     tested = []          # Pour afficher les échecs seulement si tout échoue
@@ -187,10 +187,14 @@ def find_working_server(manga_name, manga_url, domain, max_servers=10):
             test_url = f"{domain}/{server}/scans/{variant_url}/1/1.jpg"
             tested.append((server, test_url))
             
+            print(f"   [{server_num:02d}] Test {server}...", end=" ", flush=True)
+            
             if check_image_exists(test_url):
                 print("✅")
                 found_versions.append(("Normal", server, variant_url))
                 break
+            else:
+                print("·")
             
             time.sleep(0.5)
         
