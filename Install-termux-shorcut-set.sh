@@ -19,7 +19,7 @@ pip install requests
 
 # Télécharger le fichier Python Anime-dowload-termux.py depuis GitHub
 echo "Téléchargement du fichier Anime-dowload-termux.py depuis GitHub..."
-curl -L -o ~/Scan-dowload-termux.py https://raw.githubusercontent.com/Bicode-dev/Scan_Co-Sama_download/refs/heads/main/main.py
+curl -L -o ~/Scan-dowload-termux.py https://raw.githubusercontent.com/Bicode-dev/Scan_Co-Sama_download/refs/heads/main/CO-SAMA.py
 
 # Créer le répertoire de raccourcis s'il n'existe pas
 mkdir -p ~/.shortcuts
