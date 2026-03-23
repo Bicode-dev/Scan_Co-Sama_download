@@ -6,6 +6,7 @@ import re
 import sys
 import platform
 import shutil
+import zipfile
 # ── Classe UI ─────────────────────────────────────────────────────────────────
 class UI:
     @staticmethod
@@ -67,7 +68,7 @@ def check_domain_availability():
     return get_active_domain()
 
 def find_last_downloaded_chapter(folder_path):
-    """Trouve le dernier chapitre téléchargé dans le dossier"""
+    """Trouve le dernier chapitre téléchargé (dossier ou CBZ)"""
     if not os.path.exists(folder_path):
         return None
     
@@ -75,12 +76,12 @@ def find_last_downloaded_chapter(folder_path):
     
     for item in os.listdir(folder_path):
         item_path = os.path.join(folder_path, item)
-        if os.path.isdir(item_path):
-            # Pattern pour matcher les dossiers de chapitres (ex: "Chapitre_1", "Chapitre_25")
-            match = re.match(r'Chapitre[_\s]?(\d+)', item, re.IGNORECASE)
+        # Dossiers ET fichiers CBZ
+        if os.path.isdir(item_path) or item.endswith(".cbz"):
+            base = item.replace(".cbz", "")
+            match = re.match(r'Chapitre[_\s]?(\d+)', base, re.IGNORECASE)
             if match:
-                chapter_num = int(match.group(1))
-                chapters.append(chapter_num)
+                chapters.append(int(match.group(1)))
     
     if not chapters:
         return None
@@ -89,15 +90,24 @@ def find_last_downloaded_chapter(folder_path):
     return chapters[0]
 
 def count_images_in_chapter(folder_path, chapter_num):
-    """Compte le nombre d'images téléchargées pour un chapitre"""
+    """Compte le nombre d'images pour un chapitre (dossier ou CBZ)"""
     chapter_folder = os.path.join(folder_path, f"Chapitre_{chapter_num}")
+    cbz_path = os.path.join(folder_path, f"Chapitre_{chapter_num}.cbz")
     
-    if not os.path.exists(chapter_folder):
-        return 0
+    # Priorité au dossier en cours de téléchargement
+    if os.path.exists(chapter_folder):
+        files = os.listdir(chapter_folder)
+        return len([f for f in files if f.endswith('.jpg')])
     
-    files = os.listdir(chapter_folder)
-    # Compter uniquement les fichiers .jpg
-    return len([f for f in files if f.endswith('.jpg')])
+    # Sinon compter dans le CBZ existant
+    if os.path.exists(cbz_path):
+        try:
+            with zipfile.ZipFile(cbz_path, 'r') as zf:
+                return len([n for n in zf.namelist() if n.endswith('.jpg')])
+        except Exception:
+            return 0
+    
+    return 0
 
 def get_total_pages_for_chapter(base_url, chapter):
     """Récupère le nombre total de pages pour un chapitre"""
@@ -166,6 +176,39 @@ def download_image(url, filepath):
     except Exception as e:
         print(f"      ❌ Erreur: {e}")
     return False
+
+# ── CBZ ───────────────────────────────────────────────────────────────────────
+def extract_cbz_to_folder(cbz_path, chapter_folder):
+    """Extrait un CBZ existant dans le dossier pour reprendre le téléchargement"""
+    try:
+        os.makedirs(chapter_folder, exist_ok=True)
+        with zipfile.ZipFile(cbz_path, 'r') as zf:
+            zf.extractall(chapter_folder)
+        print(f"   📦 CBZ existant extrait ({len(os.listdir(chapter_folder))} pages récupérées)")
+        return True
+    except Exception as e:
+        print(f"   ⚠️  Impossible d'extraire le CBZ : {e}")
+        return False
+
+def pack_chapter_to_cbz(chapter_folder, cbz_path):
+    """Compresse le dossier d'un chapitre en CBZ puis supprime le dossier"""
+    images = sorted(
+        [f for f in os.listdir(chapter_folder) if f.endswith('.jpg')],
+        key=lambda x: int(x.replace('.jpg', ''))
+    )
+    if not images:
+        return False
+    try:
+        with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for img in images:
+                zf.write(os.path.join(chapter_folder, img), img)
+        # Supprimer le dossier temporaire
+        shutil.rmtree(chapter_folder)
+        print(f"   📦 CBZ créé : {os.path.basename(cbz_path)} ({len(images)} pages)")
+        return True
+    except Exception as e:
+        print(f"   ⚠️  Erreur création CBZ : {e}")
+        return False
 
 def find_working_server(manga_name, manga_url, domain, max_servers=10):
     """Trouve le serveur fonctionnel"""
@@ -341,9 +384,16 @@ def download_manga(manga_name, start_chapter=None):
     
     while consecutive_failures < 3:  # Arrêt après 3 chapitres non trouvés
         chapter_folder = os.path.join(manga_folder, f"Chapitre_{chapter}")
-        os.makedirs(chapter_folder, exist_ok=True)
+        cbz_path = os.path.join(manga_folder, f"Chapitre_{chapter}.cbz")
         
         print(f"📖 Chapitre {chapter}:")
+        
+        # Si CBZ existant mais pas de dossier → extraire pour reprendre
+        if os.path.exists(cbz_path) and not os.path.exists(chapter_folder):
+            extract_cbz_to_folder(cbz_path, chapter_folder)
+            os.remove(cbz_path)  # Sera recréé après complétion
+        
+        os.makedirs(chapter_folder, exist_ok=True)
         
         # Vérifier combien de pages sont déjà téléchargées
         existing_pages = count_images_in_chapter(manga_folder, chapter)
@@ -373,7 +423,9 @@ def download_manga(manga_name, start_chapter=None):
                     consecutive_failures += 1
                 else:
                     total_pages = existing_pages + pages_downloaded
-                    print(f"   ✅ Chapitre {chapter} terminé: {total_pages} pages\n")
+                    print(f"   ✅ Chapitre {chapter} terminé: {total_pages} pages")
+                    pack_chapter_to_cbz(chapter_folder, cbz_path)
+                    print()
                     consecutive_failures = 0
                 break
             
